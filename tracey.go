@@ -56,7 +56,7 @@ type Options struct {
 
 // Main entry-point for the tracey lib. Calling New with nil will
 // result in the default options being used.
-func New(opts *Options) (func(string), func(...interface{}) string) {
+func New(opts *Options) func() func() {
 	var options Options
 	if opts != nil {
 		options = *opts
@@ -64,7 +64,7 @@ func New(opts *Options) (func(string), func(...interface{}) string) {
 
 	// If tracing is not enabled, just return no-op functions
 	if options.DisableTracing {
-		return func(string) {}, func(...interface{}) string { return "" }
+		return func() func() { return func() {} }
 	}
 
 	// Revert to stdout if no logger is defined
@@ -106,20 +106,26 @@ func New(opts *Options) (func(string), func(...interface{}) string) {
 
 	// Increment function to increase the current depth value
 	_incrementDepth := func() {
-		options.currentDepth += 1
+		options.currentDepth++
 	}
 
 	// Decrement function to decrement the current depth value
 	//  + panics if current depth value is < 0
 	_decrementDepth := func() {
-		options.currentDepth -= 1
+		options.currentDepth--
 		if options.currentDepth < 0 {
 			panic("Depth is negative! Should never happen!")
 		}
 	}
 
+	// Exit function, invoked on function exit (usually deferred)
+	_exit := func() {
+		_decrementDepth()
+		options.CustomLogger.Printf("%s%s\n", _spacify(), options.ExitMessage)
+	}
+
 	// Enter function, invoked on function entry
-	_enter := func(args ...interface{}) string {
+	_enter := func() func() {
 		defer _incrementDepth()
 
 		// Figure out the name of the caller and use that
@@ -130,25 +136,20 @@ func New(opts *Options) (func(string), func(...interface{}) string) {
 		}
 
 		traceMessage := fnName
-		if len(args) > 0 {
-			if fmtStr, ok := args[0].(string); ok {
-				// We have a string leading args, assume its to be formatted
-				traceMessage = fmt.Sprintf(fmtStr, args[1:]...)
-			}
-		}
+		//		if len(args) > 0 {
+		//			if fmtStr, ok := args[0].(string); ok {
+		//				// We have a string leading args, assume its to be formatted
+		//				traceMessage = fmt.Sprintf(fmtStr, args[1:]...)
+		//			}
+		//		}
 
 		// "$FN" will be replaced by the name of the function (if present)
-		traceMessage = RE_detectFN.ReplaceAllString(traceMessage, fnName)
+		//		traceMessage = RE_detectFN.ReplaceAllString(traceMessage, fnName)
 
 		options.CustomLogger.Printf("%s%s%s\n", _spacify(), options.EnterMessage, traceMessage)
-		return traceMessage
+		//		return traceMessage
+		return _exit
 	}
 
-	// Exit function, invoked on function exit (usually deferred)
-	_exit := func(s string) {
-		_decrementDepth()
-		options.CustomLogger.Printf("%s%s%s\n", _spacify(), options.ExitMessage, s)
-	}
-
-	return _exit, _enter
+	return _enter
 }
