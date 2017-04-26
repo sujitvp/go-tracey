@@ -14,7 +14,7 @@ import (
 )
 
 // Define a global regex for extracting function names
-var RE_stripFnPreamble = regexp.MustCompile(`^.*\.(.*)$`)
+var RE_stripFnPreamble = regexp.MustCompile(`^.*\/(.*)$`)
 var RE_detectFN = regexp.MustCompile(`\$FN`)
 
 // These options represent the various settings which tracey exposes.
@@ -130,9 +130,14 @@ func New(opts *Options) func() func() {
 
 		// Figure out the name of the caller and use that
 		fnName := "<unknown>"
-		pc, _, _, ok := runtime.Caller(1)
+		pc, fl, fi, ok := runtime.Caller(1)
 		if ok {
 			fnName = RE_stripFnPreamble.ReplaceAllString(runtime.FuncForPC(pc).Name(), "$1")
+			//fnName = runtime.FuncForPC(pc).Name()
+		}
+
+		if fnName == "" {
+			fnName = fl + strconv.Itoa(fi)
 		}
 
 		traceMessage := fnName
