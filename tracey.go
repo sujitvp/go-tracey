@@ -52,6 +52,7 @@ type Options struct {
 	EnterMessage string `default:"ENTER: "`
 	ExitMessage  string `default:"EXIT:  "`
 
+	// Enables per-method execution time instrumentation
 	EnableInstrumentation bool
 }
 
@@ -68,7 +69,7 @@ var entryTime struct {
 
 // New is the main entry-point for the tracey lib. Calling New with nil will
 // result in the default options being used.
-func New(opts *Options) func(...string) func() {
+func New(opts *Options) func(...interface{}) func() {
 	var options Options
 	if opts != nil {
 		options = *opts
@@ -76,7 +77,7 @@ func New(opts *Options) func(...string) func() {
 
 	// If tracing is not enabled, just return no-op functions
 	if options.DisableTracing {
-		return func(s ...string) func() { return func() {} }
+		return func(s ...interface{}) func() { return func() {} }
 	}
 
 	// Revert to stdout if no logger is defined
@@ -165,7 +166,7 @@ func New(opts *Options) func(...string) func() {
 		}
 	}
 
-	_getname := func(s ...string) string {
+	_getname := func(s ...interface{}) string {
 		// Figure out the name of the caller and use that
 		fnName := "<unknown>"
 		pc, fl, fi, ok := runtime.Caller(2)
@@ -187,10 +188,18 @@ func New(opts *Options) func(...string) func() {
 		// "$FN" will be replaced by the name of the function (if present)
 		//		traceMessage = RE_detectFN.ReplaceAllString(traceMessage, fnName)
 		tid := "[tid:" + strconv.FormatUint(_getGID(), 10)
+		var traceMessage string
 		if len(s) > 0 {
-			tid = tid + " - " + s[0]
+			fmtStr, ok := s[0].(string)
+			if len(s) == 1 && ok {
+				tid = tid + " - " + s[0].(string)
+			} else if ok {
+				// We have a string leading args, assume its to be formatted
+				traceMessage = fmt.Sprintf(fmtStr, s[1:]...)
+			}
 		}
-		fnName = tid + "]=>" + fnName
+
+		fnName = tid + "]=>" + RE_detectFN.ReplaceAllString(traceMessage, fnName)
 		return fnName
 	}
 
@@ -216,7 +225,7 @@ func New(opts *Options) func(...string) func() {
 	}
 
 	// Enter function, invoked on function entry
-	_enter := func(s ...string) func() {
+	_enter := func(s ...interface{}) func() {
 		defer _incrementDepth()
 
 		fname := _getname(s...)
